@@ -86,8 +86,8 @@ impl Memory {
     }
 
     fn load_fonts(&mut self) {
-        let font_file = File::open("./font.bin");
-        let mem_addr = 0x0;
+        let font_file = File::open("./font.bin").unwrap();
+        let mut mem_addr = 0x0;
         for byte in font_file.bytes() {
             match byte {
                 Ok(b) => {
@@ -99,9 +99,17 @@ impl Memory {
         }
     }
 
-    fn display_pong_rom(&self) {
+    fn _display_pong_rom(&self) {
         let mut addr = ROM_ADDR;
-        for i in 1..100 {
+        for _ in 1..100 {
+            println!("{:#x}", self.mem[addr]);
+            addr += 1;
+        }
+    }
+
+    fn _display_font_data(&self) {
+        let mut addr = 0x0;
+        for _ in 0..80 {
             println!("{:#x}", self.mem[addr]);
             addr += 1;
         }
@@ -110,7 +118,7 @@ impl Memory {
 
 impl fmt::Debug for Memory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TODO implement debug output for memory")
+        write!(f, "TODO implement mem debug")
     }
 }
 
@@ -151,7 +159,7 @@ impl Chip8 {
 
     pub fn init_display(&mut self) {
         let mut target = self.display.draw();
-        target.clear_color(0.0, 0.0, 1.0, 1.0);
+        target.clear_color(0.0, 0.0, 0.0, 1.0);
         target.finish().unwrap();
 
         self.mem.load_fonts();
@@ -164,7 +172,10 @@ impl Chip8 {
 
             for ev in self.display.poll_events() {
                 match ev {
-                    super::glium::glutin::Event::Closed => return,
+                    super::glium::glutin::Event::Closed => {
+                        self._debug_font_data();
+                        return;
+                    },
                     _ => ()
                 }
             }
@@ -175,8 +186,12 @@ impl Chip8 {
         self.mem.store_program_data(rom);
     }
 
-    pub fn debug_pong_rom(&self) {
-        self.mem.display_pong_rom();
+    pub fn _debug_pong_rom(&self) {
+        self.mem._display_pong_rom();
+    }
+
+    pub fn _debug_font_data(&self) {
+        self.mem._display_font_data();
     }
 
     fn read_word(&mut self) -> u16 {
@@ -198,7 +213,9 @@ impl Chip8 {
                 //we will ignore the 0nnn opcode used for jumping to machine code routines
                 let operation = instruction & 0x00ff;
                 if(operation == 0xe0) {
-                    //TODO clear the display
+                    let mut target = self.display.draw();
+                    target.clear_color(0.0, 0.0, 0.0, 1.0);
+                    target.finish().unwrap();
                 } else if (operation == 0xee) {
                     self.reg.return_from_subroutine();
                 }
@@ -282,7 +299,13 @@ impl Chip8 {
                 self.reg.jump_to_address(initial_addr + offset, JumpType::NORMAL);
             },
             0xd => {
-                //TODO: display/sprites
+                //num bytes is also the height of the sprite
+                let num_bytes = (instruction & 0x000f) as u8;
+                let x_pos = ((instruction >> 8) & 0x000f) as u8;
+                let y_pos = ((instruction >> 4) & 0x000f) as u8;
+                for 0..num_bytes {
+                    //TODO implement vertice struct so we can make a vertex buffer and start displaying sprites
+                }
                 println!("Display operation");
             },
             0xe => {
