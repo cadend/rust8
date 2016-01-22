@@ -1,6 +1,9 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
+use std::ptr;
+use super::glium::{ DisplayBuild, Surface };
+use super::glium::backend::glutin_backend::GlutinFacade;
 
 const MEM_SIZE: usize = 4096;
 const ROM_ADDR: usize = 0x200;
@@ -105,11 +108,17 @@ impl Default for Memory {
     }
 }
 
-#[derive(Debug)]
 pub struct Chip8 {
     reg: Registers,
     mem: Memory,
-    keys: Keypad
+    keys: Keypad,
+    display: GlutinFacade
+}
+
+impl fmt::Debug for Chip8 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:#?}{:#?}{:#?}", self.reg, self.mem, self.keys)
+    }
 }
 
 impl Chip8 {
@@ -117,14 +126,32 @@ impl Chip8 {
         Chip8 {
             reg: Registers::new(),
             mem: Memory::default(),
-            keys: Keypad::default()
-        }
+            keys: Keypad::default(),
+            display: super::glium::glutin::WindowBuilder::new()
+                .with_dimensions(64, 32)
+                .with_title(String::from("rust8"))
+                .build_glium()
+                .unwrap()
+        }   
+    }
+
+    pub fn init_display(&mut self) {
+        let mut target = self.display.draw();
+        target.clear_color(0.0, 0.0, 1.0, 1.0);
+        target.finish().unwrap();
     }
 
     pub fn run(&mut self) {
         loop {
             let instruction = self.read_word();
             self.process_instruction(instruction);
+
+            for ev in self.display.poll_events() {
+                match ev {
+                    super::glium::glutin::Event::Closed => return,
+                    _ => ()
+                }
+            }
         }
     }
 
