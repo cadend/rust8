@@ -85,6 +85,20 @@ impl Memory {
         }
     }
 
+    fn load_fonts(&mut self) {
+        let font_file = File::open("./font.bin");
+        let mem_addr = 0x0;
+        for byte in font_file.bytes() {
+            match byte {
+                Ok(b) => {
+                    self.mem[mem_addr] = b;
+                    mem_addr += 1;
+                },
+                Err(e) => panic!("Some error {:?} occurred while loading font data.", e)
+            }
+        }
+    }
+
     fn display_pong_rom(&self) {
         let mut addr = ROM_ADDR;
         for i in 1..100 {
@@ -139,6 +153,8 @@ impl Chip8 {
         let mut target = self.display.draw();
         target.clear_color(0.0, 0.0, 1.0, 1.0);
         target.finish().unwrap();
+
+        self.mem.load_fonts();
     }
 
     pub fn run(&mut self) {
