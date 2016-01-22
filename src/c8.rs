@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
+use std::num::Wrapping;
 
 const MEM_SIZE: usize = 4096;
 const ROM_ADDR: usize = 0x200;
@@ -30,6 +31,32 @@ impl Registers {
         self.reg_gp[target_reg as usize] = data_value;
         println!("Loaded value {:#x} into register V{:x}", data_value, target_reg)
     }
+
+    fn write_register_i(&mut self, data_value: u16) {
+        self.reg_i = data_value;
+        println!("Loaded value {:#x} into I register", data_value);
+    }
+
+    fn read_register(&self, target_reg: u8) -> u8 {
+        self.reg_gp[target_reg as usize]
+    }
+
+    fn jump_to_address(&mut self, addr: u16, jump_type: JumpType) {
+        match jump_type {
+            JumpType::SUBROUTINE => {
+                self.stack[self.reg_sp as usize] = self.reg_pc;
+                self.reg_sp += 1;
+            }
+            JumpType::NORMAL => {}
+        }
+        println!("Jumping to address {:#x}", addr);
+        self.reg_pc = addr;
+    }
+
+    fn return_from_subroutine(&mut self) {
+        self.reg_pc = self.stack[self.reg_sp as usize];
+        self.reg_sp -= 1;
+    }
 }
 
 #[derive(Default, Debug)]
@@ -49,17 +76,25 @@ impl Memory {
             match byte {
                 Ok(b) => {
                     self.mem[last_stored_addr] = b;
-                    last_stored_addr += 2;
+                    last_stored_addr += 1;
                 },
                 Err(e) => panic!("Some error {:?} occurred while storing program data.", e)
             }
+        }
+    }
+
+    fn display_pong_rom(&self) {
+        let mut addr = ROM_ADDR;
+        for i in 1..100 {
+            println!("{:#x}", self.mem[addr]);
+            addr += 1;
         }
     }
 }
 
 impl fmt::Debug for Memory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "First opcode: {:#x} {:#x}", self.mem[0x200], self.mem[0x202])
+        write!(f, "TODO implement debug output for memory")
     }
 }
 
@@ -98,6 +133,10 @@ impl Chip8 {
         self.mem.store_program_data(rom);
     }
 
+    pub fn debug_pong_rom(&self) {
+        self.mem.display_pong_rom();
+    }
+
     fn read_word(&mut self) -> u16 {
         let instruction_high_order = (self.mem.mem[self.reg.reg_pc as usize] as u16) << 8;
         let instruction_low_order = self.mem.mem[(self.reg.reg_pc + 2) as usize] as u16;
@@ -113,10 +152,100 @@ impl Chip8 {
         let op_type: u8 = ((instruction >> 12) & 0xff) as u8;
 
         match op_type {
+            0x0 => {
+                //we will ignore the 0nnn opcode used for jumping to machine code routines
+                let operation = instruction & 0x00ff;
+                if(operation == 0xe0) {
+                    //TODO clear the display
+                } else if (operation == 0xee) {
+                    self.reg.return_from_subroutine();
+                }
+            },
+            0x1 => {
+                let jump_addr = instruction & 0x0fff;
+                self.reg.jump_to_address(jump_addr, JumpType::NORMAL);
+            },
+            0x2 => {
+                let subroutine_addr = instruction & 0x0fff;
+                self.reg.jump_to_address(subroutine_addr, JumpType::SUBROUTINE);
+            },
             0x6 => {
                 let target_reg = ((instruction >> 8) & 0x0f) as u8;
                 let data_value = (instruction & 0x00ff) as u8;
                 self.reg.write_register(target_reg, data_value);
+            },
+            0x7 => {
+                let target_reg = ((instruction >> 8) & 0x0f) as u8;
+                let immediate_value = (instruction & 0x00ff) as u8;
+                let reg_value = self.reg.read_register(target_reg);
+                let data_value = immediate_value.wrapping_add(reg_value);
+                println!("Addition");
+                self.reg.write_register(target_reg, data_value);
+            },
+            0x8 => {
+                let reg_one = ((instruction >> 8) & 0x0f) as u8;
+                let reg_two = ((instruction >> 4) & 0x0f) as u8;
+                let operation = (instruction & 0x000f) as u8;
+                match operation {
+                    0 => {
+                        let data_value = self.reg.read_register(reg_two);
+                        self.reg.write_register(reg_one, data_value);
+                    },
+                    1 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        let reg_two_value = self.reg.read_register(reg_two);
+                        let data_value = reg_one_value | reg_two_value;
+                        self.reg.write_register(reg_one, data_value);
+                    },
+                    2 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        let reg_two_value = self.reg.read_register(reg_two);
+                        let data_value = reg_one_value & reg_two_value;
+                        self.reg.write_register(reg_one, data_value);
+                    },
+                    3 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        let reg_two_value = self.reg.read_register(reg_two);
+                        if(reg_two_value > reg_one_value) {
+                            self.reg.write_register(0x0f, 0x01);
+                        }
+                        let data_value = reg_two_value - reg_one_value;
+                        self.reg.write_register(reg_one, data_value);
+                    },
+                    4 => {
+
+                    },
+                    5 => {
+
+                    },
+                    6 => {
+
+                    },
+                    7 => {
+
+                    },
+                    0xe => {
+
+                    },
+                    _ => panic!("Unrecognized opcode: {:#x}", instruction)
+                }
+            },
+            0xa => {
+                let data_value = instruction & 0x0fff;
+                self.reg.write_register_i(data_value);
+            },
+            0xb => {
+                let initial_addr = instruction & 0x0fff;
+                let offset = self.reg.read_register(0) as u16;
+                self.reg.jump_to_address(initial_addr + offset, JumpType::NORMAL);
+            },
+            0xd => {
+                //TODO: display/sprites
+                println!("Display operation");
+            },
+            0xe => {
+                //TODO: input checks
+                println!("Input checks");
             },
             _ => {
                 println!("Chip8 status at end time: {:#?}", self);
@@ -124,4 +253,8 @@ impl Chip8 {
             }
         }
     }
+}
+
+enum JumpType {
+    NORMAL, SUBROUTINE
 }
