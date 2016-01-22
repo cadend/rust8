@@ -1,7 +1,6 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use std::num::Wrapping;
 
 const MEM_SIZE: usize = 4096;
 const ROM_ADDR: usize = 0x200;
