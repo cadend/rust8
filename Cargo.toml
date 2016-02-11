@@ -4,4 +4,8 @@ version = "0.1.0"
 authors = ["Caden Depatie <cj.depatie2@gmail.com>"]
 
 [dependencies]
-glium = "0.13.4"
+sdl2 = "0.14"
+time = "0.1"
+
+[dependencies.gl]
+git = "https://github.com/bjz/gl-rs"

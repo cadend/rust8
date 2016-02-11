@@ -1,4 +1,5 @@
-extern crate glium;
+extern crate sdl2;
+extern crate time;
 
 mod c8;
 
@@ -13,7 +14,6 @@ fn main() {
     let mut chip8_emu = c8::Chip8::new();
 
     chip8_emu.store_program_data(rom_file);
-    println!("{:#?}", chip8_emu);
 
     chip8_emu.init_display();
     chip8_emu.run();
