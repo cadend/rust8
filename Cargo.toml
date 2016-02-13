@@ -6,6 +6,7 @@ authors = ["Caden Depatie <cj.depatie2@gmail.com>"]
 [dependencies]
 sdl2 = "0.14"
 time = "0.1"
+rand = "0.3"
 
 [dependencies.gl]
 git = "https://github.com/bjz/gl-rs"

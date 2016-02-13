@@ -1,5 +1,6 @@
 extern crate sdl2;
 extern crate time;
+extern crate rand;
 
 mod c8;
 

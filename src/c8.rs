@@ -10,6 +10,8 @@ use sdl2::keyboard::Keycode;
 use sdl2::render::Renderer;
 use sdl2::EventPump;
 
+use rand;
+
 use time::PreciseTime;
 
 const MEM_SIZE: usize = 4096;
@@ -66,6 +68,10 @@ impl Registers {
         self.reg_pc
     }
 
+    fn increment_pc(&mut self) {
+        self.reg_pc += 2;
+    }
+
     fn jump_to_address(&mut self, addr: u16, jump_type: JumpType) {
         match jump_type {
             JumpType::SUBROUTINE => {
@@ -85,7 +91,7 @@ impl Registers {
 
 #[derive(Default, Debug)]
 struct Keypad {
-    keys: [u8; 16],
+    keys: [bool; 16],
 }
 
 struct Memory {
@@ -205,33 +211,119 @@ impl<'a> Chip8<'a> {
 
     pub fn run(&mut self) {
 
-        let mut start_time = PreciseTime::now();
-        let mut diff;
-
         'running: loop {
-            let end_time = PreciseTime::now();
-            diff = start_time.to(end_time).num_milliseconds();
-            if diff >= SKIP_TICKS {
-                start_time = end_time;
-                for event in self.sdl_event_pump.poll_iter() {
-                    match event {
-                        Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), .. } => {
-                            break 'running
-                        }
-                        _ => {}
+
+            for event in self.sdl_event_pump.poll_iter() {
+                match event {
+                    Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), .. } => break 'running,
+                    Event::KeyDown {keycode: Some(Keycode::Num1), ..} => {
+                        self.keys.keys[1] = true;
                     }
+                    Event::KeyDown {keycode: Some(Keycode::Num2), ..} => {
+                        self.keys.keys[2] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::Num3), ..} => {
+                        self.keys.keys[3] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::Num4), ..} => {
+                        self.keys.keys[12] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::Q), ..} => {
+                        self.keys.keys[4] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::W), ..} => {
+                        self.keys.keys[5] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::E), ..} => {
+                        self.keys.keys[6] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::R), ..} => {
+                        self.keys.keys[13] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::A), ..} => {
+                        self.keys.keys[7] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::S), ..} => {
+                        self.keys.keys[8] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::D), ..} => {
+                        self.keys.keys[9] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::F), ..} => {
+                        self.keys.keys[14] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::Z), ..} => {
+                        self.keys.keys[10] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::X), ..} => {
+                        self.keys.keys[0] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::C), ..} => {
+                        self.keys.keys[11] = true;
+                    }
+                    Event::KeyDown {keycode: Some(Keycode::V), ..} => {
+                        self.keys.keys[15] = true;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::Num1), ..} => {
+                        self.keys.keys[1] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::Num2), ..} => {
+                        self.keys.keys[2] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::Num3), ..} => {
+                        self.keys.keys[3] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::Num4), ..} => {
+                        self.keys.keys[12] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::Q), ..} => {
+                        self.keys.keys[4] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::W), ..} => {
+                        self.keys.keys[5] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::E), ..} => {
+                        self.keys.keys[6] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::R), ..} => {
+                        self.keys.keys[13] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::A), ..} => {
+                        self.keys.keys[7] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::S), ..} => {
+                        self.keys.keys[8] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::D), ..} => {
+                        self.keys.keys[9] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::F), ..} => {
+                        self.keys.keys[14] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::Z), ..} => {
+                        self.keys.keys[10] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::X), ..} => {
+                        self.keys.keys[0] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::C), ..} => {
+                        self.keys.keys[11] = false;
+                    }
+                    Event::KeyUp {keycode: Some(Keycode::V), ..} => {
+                        self.keys.keys[15] = false;
+                    }
+                    _ => {}
                 }
-
-                let delay_timer_value = self.reg.read_delay_timer();
-                if delay_timer_value > 0 {
-                    self.reg.write_delay_timer(delay_timer_value - 1);
-                }
-
-                let instruction = self.read_word();
-                self.process_instruction(instruction);
-            } else {
-                continue;
             }
+
+            let delay_timer_value = self.reg.read_delay_timer();
+            if delay_timer_value > 0 {
+                self.reg.write_delay_timer(delay_timer_value - 1);
+            }
+
+            let instruction = self.read_word();
+            self.process_instruction(instruction);
+
         }
     }
 
@@ -253,7 +345,7 @@ impl<'a> Chip8<'a> {
 
         let instruction = instruction_high_order | instruction_low_order;
 
-        self.reg.reg_pc += 2;
+        self.reg.increment_pc();
         instruction
     }
 
@@ -291,6 +383,30 @@ impl<'a> Chip8<'a> {
                          instruction,
                          subroutine_addr);
                 self.reg.jump_to_address(subroutine_addr, JumpType::SUBROUTINE);
+            }
+            0x3 => {
+                let target_reg = ((instruction & 0x0f00) >> 8) as u8;
+                let comparison_byte = (instruction & 0x00ff) as u8;
+                if self.reg.read_register(target_reg) == comparison_byte {
+                    self.reg.increment_pc();
+                }
+                println!("PC: {}    |    Opcode: {:#x}    |    se V{} {:#x}",
+                         self.reg.read_pc() - 2,
+                         instruction,
+                         target_reg,
+                         comparison_byte);
+            }
+            0x4 => {
+                let target_reg = ((instruction & 0x0f00) >> 8) as u8;
+                let comparison_byte = (instruction & 0x00ff) as u8;
+                if self.reg.read_register(target_reg) != comparison_byte {
+                    self.reg.increment_pc();
+                }
+                println!("PC: {}    |    Opcode: {:#x}    |    se V{} {:#x}",
+                         self.reg.read_pc() - 2,
+                         instruction,
+                         target_reg,
+                         comparison_byte);
             }
             0x6 => {
                 let target_reg = ((instruction >> 8) & 0x0f) as u8;
@@ -389,6 +505,18 @@ impl<'a> Chip8<'a> {
                          initial_addr + offset);
                 self.reg.jump_to_address(initial_addr + offset, JumpType::NORMAL);
             }
+            0xc => {
+                let target_reg = ((instruction & 0x0f00) >> 8) as u8;
+                let combination_byte = (instruction & 0x00ff) as u8;
+                let rand_num: u8 = rand::random();
+
+                self.reg.write_register(target_reg, (combination_byte & rand_num));
+                println!("PC: {}    |    Opcode: {:#x}    |    rnd V{} {:#x}",
+                         self.reg.read_pc() - 2,
+                         instruction,
+                         target_reg,
+                         combination_byte);
+            }
             0xd => {
                 let reg_one = ((instruction & 0x0F00) >> 8) as u8;
                 let reg_two = ((instruction & 0x00F0) >> 4) as u8;
@@ -440,10 +568,32 @@ impl<'a> Chip8<'a> {
 
             }
             0xe => {
-                // TODO: input checks
-                println!("PC: {}    |    Opcode: {:#x}    |    input",
-                         self.reg.read_pc() - 2,
-                         instruction);
+                let optype = (instruction & 0x00ff) as u8;
+                let target_reg = ((instruction & 0x0f00) >> 8) as u8;
+
+                match optype {
+                    0x9e => {
+                        let key = self.reg.read_register(target_reg);
+                        if self.keys.keys[key as usize] == true {
+                            self.reg.increment_pc();
+                        }
+                        println!("PC: {}    |    Opcode: {:#x}    |    skp V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 target_reg);
+                    }
+                    0xa1 => {
+                        let key = self.reg.read_register(target_reg);
+                        if self.keys.keys[key as usize] == false {
+                            self.reg.increment_pc();
+                        }
+                        println!("PC: {}    |    Opcode: {:#x}    |    skp V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 target_reg);
+                    }
+                    _ => panic!("Invalid instruction: {:#4x}", instruction),
+                }
             }
             0xf => {
                 let operation = (instruction & 0x00FF) as u8;
@@ -566,7 +716,7 @@ impl<'a> Chip8<'a> {
             }
             _ => {
                 println!("Chip8 status at end time: {:#?}", self);
-                panic!("Unsupported op type: {:#x}", op_type);
+                panic!("Unsupported op type: {:#2x}", op_type);
             }
         }
     }
