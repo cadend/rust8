@@ -16,5 +16,6 @@ fn main() {
     chip8_emu.store_program_data(rom_file);
 
     chip8_emu.init_display();
+
     chip8_emu.run();
 }

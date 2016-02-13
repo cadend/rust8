@@ -4,6 +4,7 @@ use std::io::Read;
 
 use sdl2;
 use sdl2::pixels::Color;
+use sdl2::rect::Rect;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::render::Renderer;
@@ -176,7 +177,7 @@ impl<'a> Chip8<'a> {
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();
 
-        let new_window = video_subsystem.window("rust-sdl2", 800, 600)
+        let new_window = video_subsystem.window("Rust8", 640, 320)
                                         .position_centered()
                                         .opengl()
                                         .build()
@@ -196,9 +197,10 @@ impl<'a> Chip8<'a> {
     pub fn init_display(&mut self) {
         self.mem.load_fonts();
 
-        self.window.set_draw_color(Color::RGB(255, 0, 0));
+        self.window.set_draw_color(Color::RGB(0, 0, 0));
         self.window.clear();
         self.window.present();
+        self.window.set_draw_color(Color::RGB(255, 255, 255));
     }
 
     pub fn run(&mut self) {
@@ -388,9 +390,54 @@ impl<'a> Chip8<'a> {
                 self.reg.jump_to_address(initial_addr + offset, JumpType::NORMAL);
             }
             0xd => {
-                println!("PC: {}    |    Opcode: {:#x}    |    drw",
+                let reg_one = ((instruction & 0x0F00) >> 8) as u8;
+                let reg_two = ((instruction & 0x00F0) >> 4) as u8;
+                let num_bytes = (instruction & 0x000F) as u8;
+                println!("PC: {}    |    Opcode: {:#x}    |    drw V{} V{} {}",
                          self.reg.read_pc() - 2,
-                         instruction);
+                         instruction,
+                         reg_one,
+                         reg_two,
+                         num_bytes);
+
+                let sprite_x = self.reg.read_register(reg_one);
+                let sprite_y = self.reg.read_register(reg_two);
+                println!("Sprite X: {}  |  Sprite Y: {}", sprite_x, sprite_y);
+                let mut bit_vec: Vec<u8> = Vec::new();
+                let mut rect_vec: Vec<Rect> = Vec::new();
+                for i in 0..num_bytes {
+                    bit_vec.push(self.mem.read_byte(self.reg.read_register_i() + (i as u16)));
+                }
+
+                println!("Glyph:");
+                for byte in bit_vec.clone() {
+                    println!("{:#8b}", byte);
+                }
+                println!("");
+
+                let mut index = 0;
+                for byte in bit_vec {
+                    for i in 0..8 {
+                        if ((byte >> i) & 1) == 1 {
+                            rect_vec.push(Rect::new_unwrap((((sprite_x as i32) * 10) +
+                                                            ((7 - i) * 10)),
+                                                           (((sprite_y as i32) * 10) +
+                                                            (index * 10)),
+                                                           10,
+                                                           10));
+                        }
+                    }
+                    index += 1;
+                }
+
+                // TODO switch to texture.with_lock so that the pixels can be XOR'd
+                for r in rect_vec {
+                    println!("Drawing 10*10 at {},{}", r.x(), r.y());
+                    self.window.fill_rect(r);
+                }
+
+                self.window.present();
+
             }
             0xe => {
                 // TODO: input checks
@@ -519,7 +566,7 @@ impl<'a> Chip8<'a> {
             }
             _ => {
                 println!("Chip8 status at end time: {:#?}", self);
-                panic!("Unsupported op type: {:#x}", op_type)
+                panic!("Unsupported op type: {:#x}", op_type);
             }
         }
     }
