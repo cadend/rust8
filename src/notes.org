@@ -4,7 +4,7 @@
 ** read_input()
 
 
-* TODO Read bytes from memory into a display field of chip8 struct
+* DONE Read bytes from memory into a display field of chip8 struct
 ** display: [[u8; 8]; 4]
 ** Handle XOR of pixels and setting of VF register in process_instruction()
 * If a clear or draw instruction is executed, set draw flag in main struct

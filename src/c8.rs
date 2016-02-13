@@ -31,6 +31,8 @@ struct Registers {
     reg_sp: u8,
 
     stack: [u16; 16],
+
+    vf_bit: bool,
 }
 
 impl Registers {
@@ -170,6 +172,8 @@ pub struct Chip8<'a> {
     keys: Keypad,
     sdl_event_pump: EventPump,
     window: Renderer<'a>,
+    display: [[bool; 32]; 64],
+    display_updated: bool,
 }
 
 impl<'a> fmt::Debug for Chip8<'a> {
@@ -197,6 +201,8 @@ impl<'a> Chip8<'a> {
             keys: Keypad::default(),
             sdl_event_pump: sdl_context.event_pump().unwrap(),
             window: renderer,
+            display: [[false; 32]; 64],
+            display_updated: false,
         }
     }
 
@@ -210,120 +216,33 @@ impl<'a> Chip8<'a> {
     }
 
     pub fn run(&mut self) {
+        let mut quit = false;
+        let mut start_time = PreciseTime::now();
+        let mut diff;
 
         'running: loop {
+            let end_time = PreciseTime::now();
+            diff = start_time.to(end_time).num_milliseconds();
+            if diff >= SKIP_TICKS {
+                start_time = end_time;
 
-            for event in self.sdl_event_pump.poll_iter() {
-                match event {
-                    Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), .. } => break 'running,
-                    Event::KeyDown {keycode: Some(Keycode::Num1), ..} => {
-                        self.keys.keys[1] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::Num2), ..} => {
-                        self.keys.keys[2] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::Num3), ..} => {
-                        self.keys.keys[3] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::Num4), ..} => {
-                        self.keys.keys[12] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::Q), ..} => {
-                        self.keys.keys[4] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::W), ..} => {
-                        self.keys.keys[5] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::E), ..} => {
-                        self.keys.keys[6] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::R), ..} => {
-                        self.keys.keys[13] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::A), ..} => {
-                        self.keys.keys[7] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::S), ..} => {
-                        self.keys.keys[8] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::D), ..} => {
-                        self.keys.keys[9] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::F), ..} => {
-                        self.keys.keys[14] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::Z), ..} => {
-                        self.keys.keys[10] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::X), ..} => {
-                        self.keys.keys[0] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::C), ..} => {
-                        self.keys.keys[11] = true;
-                    }
-                    Event::KeyDown {keycode: Some(Keycode::V), ..} => {
-                        self.keys.keys[15] = true;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::Num1), ..} => {
-                        self.keys.keys[1] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::Num2), ..} => {
-                        self.keys.keys[2] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::Num3), ..} => {
-                        self.keys.keys[3] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::Num4), ..} => {
-                        self.keys.keys[12] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::Q), ..} => {
-                        self.keys.keys[4] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::W), ..} => {
-                        self.keys.keys[5] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::E), ..} => {
-                        self.keys.keys[6] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::R), ..} => {
-                        self.keys.keys[13] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::A), ..} => {
-                        self.keys.keys[7] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::S), ..} => {
-                        self.keys.keys[8] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::D), ..} => {
-                        self.keys.keys[9] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::F), ..} => {
-                        self.keys.keys[14] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::Z), ..} => {
-                        self.keys.keys[10] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::X), ..} => {
-                        self.keys.keys[0] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::C), ..} => {
-                        self.keys.keys[11] = false;
-                    }
-                    Event::KeyUp {keycode: Some(Keycode::V), ..} => {
-                        self.keys.keys[15] = false;
-                    }
-                    _ => {}
+                self.cpu_cycle();
+
+                if self.display_updated {
+                    self.render();
+                }
+
+                quit = self.handle_input();
+
+                if quit {
+                    break 'running;
+                }
+
+                let delay_timer_value = self.reg.read_delay_timer();
+                if delay_timer_value > 0 {
+                    self.reg.write_delay_timer(delay_timer_value - 1);
                 }
             }
-
-            let delay_timer_value = self.reg.read_delay_timer();
-            if delay_timer_value > 0 {
-                self.reg.write_delay_timer(delay_timer_value - 1);
-            }
-
-            let instruction = self.read_word();
-            self.process_instruction(instruction);
-
         }
     }
 
@@ -337,6 +256,143 @@ impl<'a> Chip8<'a> {
 
     pub fn _debug_font_data(&self) {
         self.mem._display_font_data();
+    }
+
+    fn cpu_cycle(&mut self) {
+        let instruction = self.read_word();
+        self.process_instruction(instruction);
+    }
+
+    fn render(&mut self) {
+        let mut rect_vec: Vec<Rect> = Vec::new();
+
+        for x in 0..64 {
+            for y in 0..32 {
+                // println!("Loading display byte at {},{}", x, y);
+                let nibble = self.display[x][y];
+                if nibble {
+                    println!("Found pixel at {},{}", x, y);
+                    rect_vec.push(Rect::new_unwrap((x * 10) as i32, (y * 10) as i32, 10, 10));
+                }
+            }
+        }
+
+        for r in rect_vec {
+            self.window.fill_rect(r);
+        }
+
+        self.window.present();
+        self.display_updated = false;
+    }
+
+    fn handle_input(&mut self) -> bool {
+
+        for event in self.sdl_event_pump.poll_iter() {
+            match event {
+                Event::Quit {..} | Event::KeyDown {keycode: Some(Keycode::Escape), .. } => {
+                    return true
+                }
+                Event::KeyDown {keycode: Some(Keycode::Num1), ..} => {
+                    self.keys.keys[1] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::Num2), ..} => {
+                    self.keys.keys[2] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::Num3), ..} => {
+                    self.keys.keys[3] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::Num4), ..} => {
+                    self.keys.keys[12] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::Q), ..} => {
+                    self.keys.keys[4] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::W), ..} => {
+                    self.keys.keys[5] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::E), ..} => {
+                    self.keys.keys[6] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::R), ..} => {
+                    self.keys.keys[13] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::A), ..} => {
+                    self.keys.keys[7] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::S), ..} => {
+                    self.keys.keys[8] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::D), ..} => {
+                    self.keys.keys[9] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::F), ..} => {
+                    self.keys.keys[14] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::Z), ..} => {
+                    self.keys.keys[10] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::X), ..} => {
+                    self.keys.keys[0] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::C), ..} => {
+                    self.keys.keys[11] = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::V), ..} => {
+                    self.keys.keys[15] = true;
+                }
+                Event::KeyUp {keycode: Some(Keycode::Num1), ..} => {
+                    self.keys.keys[1] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::Num2), ..} => {
+                    self.keys.keys[2] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::Num3), ..} => {
+                    self.keys.keys[3] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::Num4), ..} => {
+                    self.keys.keys[12] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::Q), ..} => {
+                    self.keys.keys[4] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::W), ..} => {
+                    self.keys.keys[5] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::E), ..} => {
+                    self.keys.keys[6] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::R), ..} => {
+                    self.keys.keys[13] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::A), ..} => {
+                    self.keys.keys[7] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::S), ..} => {
+                    self.keys.keys[8] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::D), ..} => {
+                    self.keys.keys[9] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::F), ..} => {
+                    self.keys.keys[14] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::Z), ..} => {
+                    self.keys.keys[10] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::X), ..} => {
+                    self.keys.keys[0] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::C), ..} => {
+                    self.keys.keys[11] = false;
+                }
+                Event::KeyUp {keycode: Some(Keycode::V), ..} => {
+                    self.keys.keys[15] = false;
+                }
+                _ => {}
+            }
+        }
+
+        false
     }
 
     fn read_word(&mut self) -> u16 {
@@ -541,8 +597,43 @@ impl<'a> Chip8<'a> {
                 for byte in bit_vec.clone() {
                     println!("{:#8b}", byte);
                 }
-                println!("");
+                    println!("");
 
+                self.reg.vf_bit = false;
+
+                let mut y_index = sprite_y as usize;
+                let mut x_value = sprite_x as usize;
+                for byte in bit_vec.clone() {
+
+                    for i in 0..8 {
+                        let mut x_index = x_value + (7-i);
+                        if x_index > 63 {
+                            x_index = 69 - x_value;
+                        }
+                        let mut bit_state: bool = false;
+                        if (byte >> i) & 1 == 1 {
+                            bit_state = true;
+                        }
+
+                        if bit_state != self.display[x_index][y_index] {
+                            println!("Setting pixel at {},{}",x_index, y_index );
+                            self.display[x_index][y_index] = true;
+                        } else {
+                            if self.display[x_index][y_index] == true {
+                                self.reg.vf_bit = true;
+                            }
+                            println!("Clearing pixel at {},{}", x_index, y_index);
+
+                            self.display[x_index][y_index] = false;
+                        }
+                    }
+
+                    y_index += 1;
+                }
+
+                self.display_updated = true;
+
+                                      /*
                 let mut index = 0;
                 for byte in bit_vec {
                     for i in 0..8 {
@@ -565,6 +656,7 @@ impl<'a> Chip8<'a> {
                 }
 
                 self.window.present();
+*/
 
             }
             0xe => {
