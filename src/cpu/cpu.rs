@@ -18,7 +18,7 @@ use rand;
 use time::PreciseTime;
 
 
-const FRAMES_PER_SECOND: i64 = 400;
+const FRAMES_PER_SECOND: i64 = 2000;
 const SKIP_TICKS: i64 = 1000 / FRAMES_PER_SECOND;
 
 pub struct Chip8<'a> {
@@ -334,12 +334,24 @@ impl<'a> Chip8<'a> {
             0x4 => {
                 let target_reg = ((instruction & 0x0f00) >> 8) as u8;
                 let comparison_byte = (instruction & 0x00ff) as u8;
-                println!("PC: {:#x}    |    Opcode: {:#x}    |    se V{} {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    sne V{} {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          target_reg,
                          comparison_byte);
                 if self.reg.read_register(target_reg) != comparison_byte {
+                    self.reg.increment_pc();
+                }
+            }
+            0x5 => {
+                let reg_one = ((instruction & 0x0f00) >> 8) as u8;
+                let reg_two = ((instruction & 0x00f0) >> 4) as u8;
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    se V{} V{}",
+                         self.reg.read_pc() - 2,
+                         instruction,
+                         reg_one,
+                         reg_two);
+                if self.reg.read_register(reg_one) == self.reg.read_register(reg_two) {
                     self.reg.increment_pc();
                 }
             }
@@ -450,7 +462,7 @@ impl<'a> Chip8<'a> {
                                  instruction,
                                  reg_one,
                                  reg_two);
-                        self.reg.write_register(reg_one, reg_two_value.wrapping_sub(reg_one_value));
+                        self.reg.write_register(reg_one, reg_one_value.wrapping_sub(reg_two_value));
                     }
                     6 => {
                         let reg_one_value = self.reg.read_register(reg_one);
@@ -468,9 +480,56 @@ impl<'a> Chip8<'a> {
 
                         self.reg.write_register(reg_one, reg_one_value >> 1);
                     }
-                    7 => panic!("Unimplemented opcode: {:#x}", instruction),
-                    0xe => panic!("Unimplemented opcode: {:#x}", instruction),
+                    7 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        let reg_two_value = self.reg.read_register(reg_two);
+
+                        if reg_two_value > reg_one_value {
+                            self.reg.vf_bit = true;
+                        } else {
+                            self.reg.vf_bit = false;
+                        }
+
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    subn V{} V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 reg_one,
+                                 reg_two);
+                        self.reg.write_register(reg_one, reg_two_value.wrapping_sub(reg_one_value));
+                    }
+                    0xe => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    shl V{} V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 reg_one,
+                                 reg_two);
+
+                        if ((reg_one_value >> 7) & 1) == 1 {
+                            self.reg.vf_bit = true;
+                        } else {
+                            self.reg.vf_bit = false;
+                        }
+
+                        self.reg.write_register(reg_one, reg_one_value << 1);
+                    }
                     _ => panic!("Unrecognized opcode: {:#x}", instruction),
+                }
+            }
+            0x9 => {
+                let reg_one = ((instruction & 0x0f00) >> 8) as u8;
+                let reg_two = ((instruction & 0x00f0) >> 4) as u8;
+                let reg_one_value = self.reg.read_register(reg_one);
+                let reg_two_value = self.reg.read_register(reg_two);
+
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    sne V{} V{}",
+                         self.reg.read_pc() - 2,
+                         instruction,
+                         reg_one,
+                         reg_two);
+
+                if reg_one_value != reg_two_value {
+                    self.reg.increment_pc();
                 }
             }
             0xa => {
@@ -707,6 +766,18 @@ impl<'a> Chip8<'a> {
                         self.mem.write_byte(self.reg.read_register_i(), hundreds_digit);
                         self.mem.write_byte(self.reg.read_register_i() + 1, tens_digit);
                         self.mem.write_byte(self.reg.read_register_i() + 2, ones_digit);
+                    }
+                    0x55 => {
+                        let num_reg = register_index as usize;
+                        let mut mem_addr = self.reg.read_register_i();
+                        for n in 0..num_reg {
+                            self.mem
+                                .write_byte(mem_addr + (n as u16), self.reg.read_register(n as u8));
+                        }
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld [I] V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 register_index);
                     }
                     0x65 => {
                         println!("PC: {:#x}    |    Opcode: {:#x}    |    ld V{} [I]",
