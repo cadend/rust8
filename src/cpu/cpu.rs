@@ -1,6 +1,9 @@
+use super::register::Registers;
+use super::keypad::Keypad;
+use super::memory::Memory;
+
 use std::fmt;
 use std::fs::File;
-use std::io::Read;
 
 use sdl2;
 use sdl2::pixels::Color;
@@ -14,165 +17,9 @@ use rand;
 
 use time::PreciseTime;
 
-const MEM_SIZE: usize = 4096;
-const ROM_ADDR: usize = 0x200;
+
 const FRAMES_PER_SECOND: i64 = 400;
 const SKIP_TICKS: i64 = 1000 / FRAMES_PER_SECOND;
-
-#[derive(Debug, Default)]
-struct Registers {
-    reg_gp: [u8; 16],
-    reg_i: u16,
-
-    reg_delay: u8,
-    reg_sound: u8,
-
-    reg_pc: u16,
-    reg_sp: u8,
-
-    stack: [u16; 16],
-
-    vf_bit: bool,
-}
-
-impl Registers {
-    fn new() -> Registers {
-        let mut reg = Registers::default();
-        reg.reg_pc = ROM_ADDR as u16;
-        reg
-    }
-
-    fn write_register(&mut self, target_reg: u8, data_value: u8) {
-        self.reg_gp[target_reg as usize] = data_value;
-    }
-
-    fn write_register_i(&mut self, data_value: u16) {
-        self.reg_i = data_value;
-    }
-
-    fn write_delay_timer(&mut self, data_value: u8) {
-        self.reg_delay = data_value;
-    }
-
-    fn write_sound_timer(&mut self, data_value: u8) {
-        self.reg_sound = data_value;
-    }
-
-    fn read_register(&self, target_reg: u8) -> u8 {
-        self.reg_gp[target_reg as usize]
-    }
-
-    fn read_register_i(&self) -> u16 {
-        self.reg_i
-    }
-
-    fn read_delay_timer(&self) -> u8 {
-        self.reg_delay
-    }
-
-    fn read_sound_timer(&self) -> u8 {
-        self.reg_sound
-    }
-
-    fn read_pc(&self) -> u16 {
-        self.reg_pc
-    }
-
-    fn increment_pc(&mut self) {
-        self.reg_pc += 2;
-    }
-
-    fn jump_to_address(&mut self, addr: u16, jump_type: JumpType) {
-        match jump_type {
-            JumpType::SUBROUTINE => {
-                self.stack[self.reg_sp as usize] = self.reg_pc;
-                self.reg_sp += 1;
-            }
-            JumpType::NORMAL => {}
-        }
-        self.reg_pc = addr;
-    }
-
-    fn return_from_subroutine(&mut self) {
-        self.reg_pc = self.stack[(self.reg_sp - 1) as usize];
-        self.reg_sp -= 1;
-    }
-}
-
-#[derive(Default, Debug)]
-struct Keypad {
-    keys: [bool; 16],
-}
-
-struct Memory {
-    mem: [u8; MEM_SIZE],
-}
-
-impl Memory {
-    fn store_program_data(&mut self, rom: File) {
-        let mut last_stored_addr = ROM_ADDR;
-
-        for byte in rom.bytes() {
-            match byte {
-                Ok(b) => {
-                    self.mem[last_stored_addr] = b;
-                    last_stored_addr += 1;
-                }
-                Err(e) => panic!("Some error {:?} occurred while storing program data.", e),
-            }
-        }
-    }
-
-    fn load_fonts(&mut self) {
-        let font_file = File::open("./font.bin").unwrap();
-        let mut mem_addr = 0x0;
-        for byte in font_file.bytes() {
-            match byte {
-                Ok(b) => {
-                    self.mem[mem_addr] = b;
-                    mem_addr += 1;
-                }
-                Err(e) => panic!("Some error {:?} occurred while loading font data.", e),
-            }
-        }
-    }
-
-    fn read_byte(&self, address: u16) -> u8 {
-        self.mem[address as usize]
-    }
-
-    fn write_byte(&mut self, address: u16, new_byte: u8) {
-        self.mem[address as usize] = new_byte;
-    }
-
-    fn _display_pong_rom(&self) {
-        let mut addr = ROM_ADDR;
-        for _ in 1..100 {
-            println!("{:#x}", self.mem[addr]);
-            addr += 1;
-        }
-    }
-
-    fn _display_font_data(&self) {
-        let mut addr = 0x0;
-        for _ in 0..80 {
-            println!("{:#x}", self.mem[addr]);
-            addr += 1;
-        }
-    }
-}
-
-impl fmt::Debug for Memory {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "TODO implement mem debug")
-    }
-}
-
-impl Default for Memory {
-    fn default() -> Memory {
-        Memory { mem: [0u8; MEM_SIZE] }
-    }
-}
 
 pub struct Chip8<'a> {
     reg: Registers,
@@ -240,7 +87,7 @@ impl<'a> Chip8<'a> {
 
             quit = self.handle_input();
 
-            if quit {
+            if quit == true {
                 break 'running;
             }
 
@@ -423,8 +270,8 @@ impl<'a> Chip8<'a> {
     }
 
     fn read_word(&mut self) -> u16 {
-        let instruction_high_order = (self.mem.mem[self.reg.reg_pc as usize] as u16) << 8;
-        let instruction_low_order = self.mem.mem[(self.reg.reg_pc + 1) as usize] as u16;
+        let instruction_high_order = (self.mem.read_byte(self.reg.read_pc()) as u16) << 8;
+        let instruction_low_order = self.mem.read_byte(self.reg.read_pc() + 1) as u16;
 
         let instruction = instruction_high_order | instruction_low_order;
 
@@ -670,7 +517,6 @@ impl<'a> Chip8<'a> {
                 let sprite_y = self.reg.read_register(reg_two);
                 println!("Sprite X: {}  |  Sprite Y: {}", sprite_x, sprite_y);
                 let mut bit_vec: Vec<u8> = Vec::new();
-                let mut rect_vec: Vec<Rect> = Vec::new();
                 for i in 0..num_bytes {
                     bit_vec.push(self.mem.read_byte(self.reg.read_register_i() + (i as u16)));
                 }
@@ -890,7 +736,7 @@ impl<'a> Chip8<'a> {
     }
 }
 
-enum JumpType {
+pub enum JumpType {
     NORMAL,
     SUBROUTINE,
 }
