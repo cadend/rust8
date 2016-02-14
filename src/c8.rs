@@ -16,7 +16,7 @@ use time::PreciseTime;
 
 const MEM_SIZE: usize = 4096;
 const ROM_ADDR: usize = 0x200;
-const FRAMES_PER_SECOND: i64 = 2000;
+const FRAMES_PER_SECOND: i64 = 400;
 const SKIP_TICKS: i64 = 1000 / FRAMES_PER_SECOND;
 
 #[derive(Debug, Default)]
@@ -605,7 +605,22 @@ impl<'a> Chip8<'a> {
                                  reg_two);
                         self.reg.write_register(reg_one, reg_two_value.wrapping_sub(reg_one_value));
                     }
-                    6 => panic!("Unimplemented opcode: {:#x}", instruction),
+                    6 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    shr V{} V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 reg_one,
+                                 reg_two);
+
+                        if (reg_one_value & 1) == 1 {
+                            self.reg.vf_bit = true;
+                        } else {
+                            self.reg.vf_bit = false;
+                        }
+
+                        self.reg.write_register(reg_one, reg_one_value >> 1);
+                    }
                     7 => panic!("Unimplemented opcode: {:#x}", instruction),
                     0xe => panic!("Unimplemented opcode: {:#x}", instruction),
                     _ => panic!("Unrecognized opcode: {:#x}", instruction),
