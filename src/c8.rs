@@ -16,7 +16,7 @@ use time::PreciseTime;
 
 const MEM_SIZE: usize = 4096;
 const ROM_ADDR: usize = 0x200;
-const FRAMES_PER_SECOND: i64 = 60;
+const FRAMES_PER_SECOND: i64 = 2000;
 const SKIP_TICKS: i64 = 1000 / FRAMES_PER_SECOND;
 
 #[derive(Debug, Default)]
@@ -54,6 +54,10 @@ impl Registers {
         self.reg_delay = data_value;
     }
 
+    fn write_sound_timer(&mut self, data_value: u8) {
+        self.reg_sound = data_value;
+    }
+
     fn read_register(&self, target_reg: u8) -> u8 {
         self.reg_gp[target_reg as usize]
     }
@@ -64,6 +68,10 @@ impl Registers {
 
     fn read_delay_timer(&self) -> u8 {
         self.reg_delay
+    }
+
+    fn read_sound_timer(&self) -> u8 {
+        self.reg_sound
     }
 
     fn read_pc(&self) -> u16 {
@@ -223,24 +231,33 @@ impl<'a> Chip8<'a> {
         'running: loop {
             let end_time = PreciseTime::now();
             diff = start_time.to(end_time).num_milliseconds();
+
+            self.cpu_cycle();
+
+            if self.display_updated {
+                self.render();
+            }
+
+            quit = self.handle_input();
+
+            if quit {
+                break 'running;
+            }
+
             if diff >= SKIP_TICKS {
                 start_time = end_time;
 
-                self.cpu_cycle();
-
-                if self.display_updated {
-                    self.render();
-                }
-
-                quit = self.handle_input();
-
-                if quit {
-                    break 'running;
-                }
 
                 let delay_timer_value = self.reg.read_delay_timer();
                 if delay_timer_value > 0 {
                     self.reg.write_delay_timer(delay_timer_value - 1);
+                }
+
+                let sound_timer_value = self.reg.read_sound_timer();
+                if sound_timer_value > 0 {
+                    // TODO: actually output a beep or something
+                    println!("BEEP!");
+                    self.reg.write_sound_timer(sound_timer_value - 1);
                 }
             }
         }
@@ -264,20 +281,30 @@ impl<'a> Chip8<'a> {
     }
 
     fn render(&mut self) {
-        let mut rect_vec: Vec<Rect> = Vec::new();
+        let mut fg_rect_vec: Vec<Rect> = Vec::new();
+        let mut bg_rect_vec: Vec<Rect> = Vec::new();
 
         for x in 0..64 {
             for y in 0..32 {
                 // println!("Loading display byte at {},{}", x, y);
                 let nibble = self.display[x][y];
                 if nibble {
-                    println!("Found pixel at {},{}", x, y);
-                    rect_vec.push(Rect::new_unwrap((x * 10) as i32, (y * 10) as i32, 10, 10));
+                    fg_rect_vec.push(Rect::new_unwrap((x * 10) as i32, (y * 10) as i32, 10, 10));
+                } else {
+                    bg_rect_vec.push(Rect::new_unwrap((x * 10) as i32, (y * 10) as i32, 10, 10));
                 }
             }
         }
 
-        for r in rect_vec {
+        self.window.set_draw_color(Color::RGB(0, 0, 0));
+
+        for r in bg_rect_vec {
+            self.window.fill_rect(r);
+        }
+
+        self.window.set_draw_color(Color::RGB(255, 255, 255));
+
+        for r in fg_rect_vec {
             self.window.fill_rect(r);
         }
 
@@ -413,12 +440,17 @@ impl<'a> Chip8<'a> {
                 // we will ignore the 0nnn opcode used for jumping to machine code routines
                 let operation = instruction & 0x00ff;
                 if operation == 0xe0 {
-                    println!("PC: {}    |    Opcode: {:#x}      |    cls",
+                    println!("PC: {:#x}    |    Opcode: {:#x}      |    cls",
                              self.reg.read_pc() - 2,
                              instruction);
-                    println!("clear display");
+                    for x in 0..64 {
+                        for y in 0..32 {
+                            self.display[x][y] = false;
+                        }
+                    }
+                    self.display_updated = true;
                 } else if operation == 0xee {
-                    println!("PC: {}    |    Opcode: {:#x}      |    ret",
+                    println!("PC: {:#x}    |    Opcode: {:#x}      |    ret",
                              self.reg.read_pc() - 2,
                              instruction);
                     self.reg.return_from_subroutine();
@@ -426,7 +458,7 @@ impl<'a> Chip8<'a> {
             }
             0x1 => {
                 let jump_addr = instruction & 0x0fff;
-                println!("PC: {}    |    Opcode: {:#x}    |    jmp {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    jmp {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          jump_addr);
@@ -434,7 +466,7 @@ impl<'a> Chip8<'a> {
             }
             0x2 => {
                 let subroutine_addr = instruction & 0x0fff;
-                println!("PC: {}    |    Opcode: {:#x}    |    call {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    call {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          subroutine_addr);
@@ -443,31 +475,31 @@ impl<'a> Chip8<'a> {
             0x3 => {
                 let target_reg = ((instruction & 0x0f00) >> 8) as u8;
                 let comparison_byte = (instruction & 0x00ff) as u8;
-                if self.reg.read_register(target_reg) == comparison_byte {
-                    self.reg.increment_pc();
-                }
-                println!("PC: {}    |    Opcode: {:#x}    |    se V{} {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    se V{} {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          target_reg,
                          comparison_byte);
+                if self.reg.read_register(target_reg) == comparison_byte {
+                    self.reg.increment_pc();
+                }
             }
             0x4 => {
                 let target_reg = ((instruction & 0x0f00) >> 8) as u8;
                 let comparison_byte = (instruction & 0x00ff) as u8;
-                if self.reg.read_register(target_reg) != comparison_byte {
-                    self.reg.increment_pc();
-                }
-                println!("PC: {}    |    Opcode: {:#x}    |    se V{} {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    se V{} {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          target_reg,
                          comparison_byte);
+                if self.reg.read_register(target_reg) != comparison_byte {
+                    self.reg.increment_pc();
+                }
             }
             0x6 => {
                 let target_reg = ((instruction >> 8) & 0x0f) as u8;
                 let data_value = (instruction & 0x00ff) as u8;
-                println!("PC: {}    |    Opcode: {:#x}    |    ld V{} {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    ld V{} {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          target_reg,
@@ -479,7 +511,7 @@ impl<'a> Chip8<'a> {
                 let immediate_value = (instruction & 0x00ff) as u8;
                 let reg_value = self.reg.read_register(target_reg);
                 let data_value = immediate_value.wrapping_add(reg_value);
-                println!("PC: {}    |    Opcode: {:#x}    |    add V{} {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    add V{} {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          target_reg,
@@ -493,7 +525,7 @@ impl<'a> Chip8<'a> {
                 match operation {
                     0 => {
                         let data_value = self.reg.read_register(reg_two);
-                        println!("PC: {}    |    Opcode: {:#x}    |    ld V{} V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld V{} V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  reg_one,
@@ -504,7 +536,7 @@ impl<'a> Chip8<'a> {
                         let reg_one_value = self.reg.read_register(reg_one);
                         let reg_two_value = self.reg.read_register(reg_two);
                         let data_value = reg_one_value | reg_two_value;
-                        println!("PC: {}    |    Opcode: {:#x}    |    or V{} V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    or V{} V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  reg_one,
@@ -515,7 +547,7 @@ impl<'a> Chip8<'a> {
                         let reg_one_value = self.reg.read_register(reg_one);
                         let reg_two_value = self.reg.read_register(reg_two);
                         let data_value = reg_one_value & reg_two_value;
-                        println!("PC: {}    |    Opcode: {:#x}    |    and V{} V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    and V{} V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  reg_one,
@@ -529,24 +561,59 @@ impl<'a> Chip8<'a> {
                             self.reg.write_register(0x0f, 0x01);
                         }
                         let data_value = reg_two_value - reg_one_value;
-                        println!("PC: {}    |    Opcode: {:#x}    |    xor V{} V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    xor V{} V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  reg_one,
                                  reg_two);
                         self.reg.write_register(reg_one, data_value);
                     }
-                    4 => {}
-                    5 => {}
-                    6 => {}
-                    7 => {}
-                    0xe => {}
+                    4 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        let reg_two_value = self.reg.read_register(reg_two);
+
+                        let mut result: u32 = (reg_one_value as u32) + (reg_two_value as u32);
+
+                        if result > 255 {
+                            self.reg.vf_bit = true;
+                            result = 255;
+                        } else {
+                            self.reg.vf_bit = false;
+                        }
+
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    add V{} V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 reg_one,
+                                 reg_two);
+                        self.reg.write_register(reg_one, result as u8);
+                    }
+                    5 => {
+                        let reg_one_value = self.reg.read_register(reg_one);
+                        let reg_two_value = self.reg.read_register(reg_two);
+
+                        if reg_one_value > reg_two_value {
+                            self.reg.vf_bit = true;
+                        } else {
+                            self.reg.vf_bit = false;
+                        }
+
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    sub V{} V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 reg_one,
+                                 reg_two);
+                        self.reg.write_register(reg_one, reg_two_value.wrapping_sub(reg_one_value));
+                    }
+                    6 => panic!("Unimplemented opcode: {:#x}", instruction),
+                    7 => panic!("Unimplemented opcode: {:#x}", instruction),
+                    0xe => panic!("Unimplemented opcode: {:#x}", instruction),
                     _ => panic!("Unrecognized opcode: {:#x}", instruction),
                 }
             }
             0xa => {
                 let data_value = instruction & 0x0fff;
-                println!("PC: {}    |    Opcode: {:#x}    |    ld i {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    ld i {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          data_value);
@@ -555,7 +622,7 @@ impl<'a> Chip8<'a> {
             0xb => {
                 let initial_addr = instruction & 0x0fff;
                 let offset = self.reg.read_register(0) as u16;
-                println!("PC: {}    |    Opcode: {:#x}    |    jp V0 {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    jp V0 {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          initial_addr + offset);
@@ -567,7 +634,7 @@ impl<'a> Chip8<'a> {
                 let rand_num: u8 = rand::random();
 
                 self.reg.write_register(target_reg, (combination_byte & rand_num));
-                println!("PC: {}    |    Opcode: {:#x}    |    rnd V{} {:#x}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    rnd V{} {:#x}",
                          self.reg.read_pc() - 2,
                          instruction,
                          target_reg,
@@ -577,7 +644,7 @@ impl<'a> Chip8<'a> {
                 let reg_one = ((instruction & 0x0F00) >> 8) as u8;
                 let reg_two = ((instruction & 0x00F0) >> 4) as u8;
                 let num_bytes = (instruction & 0x000F) as u8;
-                println!("PC: {}    |    Opcode: {:#x}    |    drw V{} V{} {}",
+                println!("PC: {:#x}    |    Opcode: {:#x}    |    drw V{} V{} {}",
                          self.reg.read_pc() - 2,
                          instruction,
                          reg_one,
@@ -597,7 +664,7 @@ impl<'a> Chip8<'a> {
                 for byte in bit_vec.clone() {
                     println!("{:#8b}", byte);
                 }
-                    println!("");
+                println!("");
 
                 self.reg.vf_bit = false;
 
@@ -606,23 +673,25 @@ impl<'a> Chip8<'a> {
                 for byte in bit_vec.clone() {
 
                     for i in 0..8 {
-                        let mut x_index = x_value + (7-i);
+                        let mut x_index = x_value + (7 - i);
                         if x_index > 63 {
                             x_index = 69 - x_value;
                         }
+                        if y_index > 31 {
+                            y_index = y_index - 32;
+                        }
+
                         let mut bit_state: bool = false;
                         if (byte >> i) & 1 == 1 {
                             bit_state = true;
                         }
 
                         if bit_state != self.display[x_index][y_index] {
-                            println!("Setting pixel at {},{}",x_index, y_index );
                             self.display[x_index][y_index] = true;
                         } else {
                             if self.display[x_index][y_index] == true {
                                 self.reg.vf_bit = true;
                             }
-                            println!("Clearing pixel at {},{}", x_index, y_index);
 
                             self.display[x_index][y_index] = false;
                         }
@@ -632,32 +701,6 @@ impl<'a> Chip8<'a> {
                 }
 
                 self.display_updated = true;
-
-                                      /*
-                let mut index = 0;
-                for byte in bit_vec {
-                    for i in 0..8 {
-                        if ((byte >> i) & 1) == 1 {
-                            rect_vec.push(Rect::new_unwrap((((sprite_x as i32) * 10) +
-                                                            ((7 - i) * 10)),
-                                                           (((sprite_y as i32) * 10) +
-                                                            (index * 10)),
-                                                           10,
-                                                           10));
-                        }
-                    }
-                    index += 1;
-                }
-
-                // TODO switch to texture.with_lock so that the pixels can be XOR'd
-                for r in rect_vec {
-                    println!("Drawing 10*10 at {},{}", r.x(), r.y());
-                    self.window.fill_rect(r);
-                }
-
-                self.window.present();
-*/
-
             }
             0xe => {
                 let optype = (instruction & 0x00ff) as u8;
@@ -669,7 +712,7 @@ impl<'a> Chip8<'a> {
                         if self.keys.keys[key as usize] == true {
                             self.reg.increment_pc();
                         }
-                        println!("PC: {}    |    Opcode: {:#x}    |    skp V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    skp V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  target_reg);
@@ -679,7 +722,7 @@ impl<'a> Chip8<'a> {
                         if self.keys.keys[key as usize] == false {
                             self.reg.increment_pc();
                         }
-                        println!("PC: {}    |    Opcode: {:#x}    |    skp V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    sknp V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  target_reg);
@@ -693,7 +736,7 @@ impl<'a> Chip8<'a> {
 
                 match operation {
                     0x07 => {
-                        println!("PC: {}    |    Opcode: {:#x}    |    ld V{} DT",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld V{} DT",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  register_index);
@@ -701,15 +744,33 @@ impl<'a> Chip8<'a> {
                         self.reg.write_register(register_index, reg_value);
                     }
                     0x15 => {
-                        println!("PC: {}    |    Opcode: {:#x}    |    ld DT V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld DT V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  register_index);
                         let reg_value = self.reg.read_register(register_index);
                         self.reg.write_delay_timer(reg_value);
                     }
+                    0x18 => {
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld ST V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 register_index);
+                        let reg_value = self.reg.read_register(register_index);
+                        self.reg.write_sound_timer(reg_value);
+                    }
+                    0x1e => {
+                        let reg_value = self.reg.read_register(register_index);
+                        let i_value = self.reg.read_register_i();
+
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    add I V{}",
+                                 self.reg.read_pc() - 2,
+                                 instruction,
+                                 register_index);
+                        self.reg.write_register_i((reg_value as u16) + i_value);
+                    }
                     0x29 => {
-                        println!("PC: {}    |    Opcode: {:#x}    |    ld F V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld F V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  register_index);
@@ -777,7 +838,7 @@ impl<'a> Chip8<'a> {
                         reg_value = reg_value / 10;
                         let hundreds_digit: u8 = reg_value % 10;
 
-                        println!("PC: {}    |    Opcode: {:#x}    |    ld B V{}",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld B V{}",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  register_index);
@@ -787,7 +848,7 @@ impl<'a> Chip8<'a> {
                         self.mem.write_byte(self.reg.read_register_i() + 2, ones_digit);
                     }
                     0x65 => {
-                        println!("PC: {}    |    Opcode: {:#x}    |    ld V{} [I]",
+                        println!("PC: {:#x}    |    Opcode: {:#x}    |    ld V{} [I]",
                                  self.reg.read_pc() - 2,
                                  instruction,
                                  register_index);
@@ -800,7 +861,7 @@ impl<'a> Chip8<'a> {
                     _ => {
                         println!("Chip8 status at end time: {:#?}", self);
                         println!("*************Unrecognized opcode!*************");
-                        panic!("PC: {}    |    Opcode: {:#x}    |    various",
+                        panic!("PC: {:#x}    |    Opcode: {:#x}    |    various",
                                self.reg.read_pc() - 2,
                                instruction);
                     }
