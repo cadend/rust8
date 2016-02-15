@@ -1,5 +1,6 @@
 # rust8
 [![License MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Build Status](https://travis-ci.org/cdepatie/rust8.svg?branch=master)](https://travis-ci.org/cdepatie/rust8)
 
 ## Chip8 emulator in rust
 
