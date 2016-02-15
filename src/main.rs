@@ -19,5 +19,17 @@ fn main() {
 
     chip8_emu.init_display();
 
-    chip8_emu.run();
+    let debug_arg = env::args().nth(2);
+    match debug_arg {
+        Some(d) => {
+            if &d == "-d" {
+                chip8_emu._run_debug();
+            } else {
+                chip8_emu.run();
+            }
+        }
+        None => {
+            chip8_emu.run();
+        }
+    }
 }

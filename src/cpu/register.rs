@@ -1,8 +1,9 @@
 use super::cpu::JumpType;
+use std::fmt;
 
 const ROM_ADDR: usize = 0x200;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Registers {
     reg_gp: [u8; 16],
     reg_i: u16,
@@ -16,6 +17,30 @@ pub struct Registers {
     stack: [u16; 16],
 
     pub vf_bit: bool,
+}
+
+impl fmt::Debug for Registers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for i in 0..8 {
+            try!(writeln!(f, "V{}: {:#x}", i, self.reg_gp[i]));
+        }
+
+        for i in 8..16 {
+            try!(writeln!(f, "V{}: {:#x}", i, self.reg_gp[i]));
+        }
+
+        try!(write!(f, "I-register: {:#4x} | ", self.reg_i));
+        try!(writeln!(f,
+                      "Timers: Sound({:#4x}) Delay({:#4x})",
+                      self.reg_sound,
+                      self.reg_delay));
+
+        try!(writeln!(f, "PC: {:#4x} | SP: {:#2x}", self.reg_pc, self.reg_sp));
+        for i in 0..16 {
+            writeln!(f, "SLVL {}: {:#4x}", i, self.stack[i]);
+        }
+        write!(f, "VF_bit = {:?}", self.vf_bit)
+    }
 }
 
 impl Registers {

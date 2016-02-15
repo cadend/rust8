@@ -18,7 +18,7 @@ use rand;
 use time::PreciseTime;
 
 
-const FRAMES_PER_SECOND: i64 = 2000;
+const FRAMES_PER_SECOND: i64 = 4000;
 const SKIP_TICKS: i64 = 1000 / FRAMES_PER_SECOND;
 
 pub struct Chip8<'a> {
@@ -29,6 +29,7 @@ pub struct Chip8<'a> {
     window: Renderer<'a>,
     display: [[bool; 32]; 64],
     display_updated: bool,
+    _next_step: bool,
 }
 
 impl<'a> fmt::Debug for Chip8<'a> {
@@ -58,6 +59,7 @@ impl<'a> Chip8<'a> {
             window: renderer,
             display: [[false; 32]; 64],
             display_updated: false,
+            _next_step: false,
         }
     }
 
@@ -84,6 +86,56 @@ impl<'a> Chip8<'a> {
             if self.display_updated {
                 self.render();
             }
+
+            quit = self.handle_input();
+
+            if quit == true {
+                break 'running;
+            }
+
+            if diff >= SKIP_TICKS {
+                start_time = end_time;
+
+
+                let delay_timer_value = self.reg.read_delay_timer();
+                if delay_timer_value > 0 {
+                    self.reg.write_delay_timer(delay_timer_value - 1);
+                }
+
+                let sound_timer_value = self.reg.read_sound_timer();
+                if sound_timer_value > 0 {
+                    // TODO: actually output a beep or something
+                    println!("BEEP!");
+                    self.reg.write_sound_timer(sound_timer_value - 1);
+                }
+            }
+        }
+    }
+
+    pub fn _run_debug(&mut self) {
+        let mut quit = false;
+        let mut start_time = PreciseTime::now();
+        let mut diff;
+
+        'running: loop {
+            let end_time = PreciseTime::now();
+            diff = start_time.to(end_time).num_milliseconds();
+
+            while !self._next_step {
+                quit = self.handle_input();
+                if quit == true {
+                    break 'running;
+                }
+            }
+            self._next_step = false;
+
+            self.cpu_cycle();
+
+            if self.display_updated {
+                self.render();
+            }
+
+            println!("{:?}", self);
 
             quit = self.handle_input();
 
@@ -262,6 +314,12 @@ impl<'a> Chip8<'a> {
                 Event::KeyUp {keycode: Some(Keycode::V), ..} => {
                     self.keys.keys[15] = false;
                 }
+                Event::KeyDown {keycode: Some(Keycode::K), ..} => {
+                    self._next_step = true;
+                }
+                Event::KeyDown {keycode: Some(Keycode::M), ..} => {
+                    self.mem._dump_mem_to_disk();
+                }
                 _ => {}
             }
         }
@@ -435,7 +493,6 @@ impl<'a> Chip8<'a> {
 
                         if result > 255 {
                             self.reg.vf_bit = true;
-                            result = 255;
                         } else {
                             self.reg.vf_bit = false;
                         }
@@ -560,6 +617,9 @@ impl<'a> Chip8<'a> {
                          instruction,
                          target_reg,
                          combination_byte);
+                println!("             |   rand_num: {:#x}   |    final byte: {:#x}",
+                         rand_num,
+                         combination_byte & rand_num);
             }
             0xd => {
                 let reg_one = ((instruction & 0x0F00) >> 8) as u8;

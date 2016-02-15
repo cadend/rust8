@@ -1,4 +1,4 @@
-* TODO Clean up run loop
+* DONE Clean up run loop
 ** cpu_cycle()
 ** render()
 ** read_input()
@@ -12,7 +12,7 @@
 
 
 * Major need to factor code out of c8.rs
-** TODO Graphical things should go into their own mod
+** DONE Graphical things should go into their own mod
 *** Maybe have a Display struct containing all the SDL bits and the actual display array mentioned above,
 *** then have the Chip8 own a Display
 ** TODO Use an enum for opcodes

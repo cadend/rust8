@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::fmt;
 use std::io::Read;
+use std::io::Write;
 
 const MEM_SIZE: usize = 4096;
 const ROM_ADDR: usize = 0x200;
@@ -44,6 +45,12 @@ impl Memory {
 
     pub fn write_byte(&mut self, address: u16, new_byte: u8) {
         self.mem[address as usize] = new_byte;
+    }
+
+    pub fn _dump_mem_to_disk(&self) {
+        let mut out = File::create("./memdump.dmp").unwrap();
+        out.write_all(&self.mem);
+        println!("Dumped memory to disk.");
     }
 
     pub fn _display_pong_rom(&self) {
