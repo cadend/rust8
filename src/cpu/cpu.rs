@@ -83,9 +83,6 @@ impl<'a> Chip8<'a> {
 
             self.cpu_cycle();
 
-            if self.display_updated {
-                self.render();
-            }
 
             quit = self.handle_input();
 
@@ -95,8 +92,6 @@ impl<'a> Chip8<'a> {
 
             if diff >= SKIP_TICKS {
                 start_time = end_time;
-
-
                 let delay_timer_value = self.reg.read_delay_timer();
                 if delay_timer_value > 0 {
                     self.reg.write_delay_timer(delay_timer_value - 1);
@@ -109,6 +104,7 @@ impl<'a> Chip8<'a> {
                     self.reg.write_sound_timer(sound_timer_value - 1);
                 }
             }
+            self.render();
         }
     }
 
@@ -492,9 +488,9 @@ impl<'a> Chip8<'a> {
                         let mut result: u32 = (reg_one_value as u32) + (reg_two_value as u32);
 
                         if result > 255 {
-                            self.reg.vf_bit = true;
+                            self.reg.set_vf();
                         } else {
-                            self.reg.vf_bit = false;
+                            self.reg.clear_vf();
                         }
 
                         println!("PC: {:#x}    |    Opcode: {:#x}    |    add V{} V{}",
@@ -509,9 +505,9 @@ impl<'a> Chip8<'a> {
                         let reg_two_value = self.reg.read_register(reg_two);
 
                         if reg_one_value > reg_two_value {
-                            self.reg.vf_bit = true;
+                            self.reg.set_vf();
                         } else {
-                            self.reg.vf_bit = false;
+                            self.reg.clear_vf();
                         }
 
                         println!("PC: {:#x}    |    Opcode: {:#x}    |    sub V{} V{}",
@@ -530,9 +526,9 @@ impl<'a> Chip8<'a> {
                                  reg_two);
 
                         if (reg_one_value & 1) == 1 {
-                            self.reg.vf_bit = true;
+                            self.reg.set_vf();
                         } else {
-                            self.reg.vf_bit = false;
+                            self.reg.clear_vf();
                         }
 
                         self.reg.write_register(reg_one, reg_one_value >> 1);
@@ -542,9 +538,9 @@ impl<'a> Chip8<'a> {
                         let reg_two_value = self.reg.read_register(reg_two);
 
                         if reg_two_value > reg_one_value {
-                            self.reg.vf_bit = true;
+                            self.reg.set_vf();
                         } else {
-                            self.reg.vf_bit = false;
+                            self.reg.clear_vf();
                         }
 
                         println!("PC: {:#x}    |    Opcode: {:#x}    |    subn V{} V{}",
@@ -563,9 +559,9 @@ impl<'a> Chip8<'a> {
                                  reg_two);
 
                         if ((reg_one_value >> 7) & 1) == 1 {
-                            self.reg.vf_bit = true;
+                            self.reg.set_vf();
                         } else {
-                            self.reg.vf_bit = false;
+                            self.reg.clear_vf();
                         }
 
                         self.reg.write_register(reg_one, reg_one_value << 1);
@@ -646,7 +642,7 @@ impl<'a> Chip8<'a> {
                 }
                 println!("");
 
-                self.reg.vf_bit = false;
+                self.reg.clear_vf();
 
                 let mut y_index = sprite_y as usize;
                 let mut x_value = sprite_x as usize;
@@ -670,7 +666,7 @@ impl<'a> Chip8<'a> {
                             self.display[x_index][y_index] = true;
                         } else {
                             if self.display[x_index][y_index] == true {
-                                self.reg.vf_bit = true;
+                                self.reg.set_vf();
                             }
 
                             self.display[x_index][y_index] = false;

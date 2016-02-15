@@ -15,8 +15,6 @@ pub struct Registers {
     reg_sp: u8,
 
     stack: [u16; 16],
-
-    pub vf_bit: bool,
 }
 
 impl fmt::Debug for Registers {
@@ -25,10 +23,11 @@ impl fmt::Debug for Registers {
             try!(writeln!(f, "V{}: {:#x}", i, self.reg_gp[i]));
         }
 
-        for i in 8..16 {
+        for i in 8..15 {
             try!(writeln!(f, "V{}: {:#x}", i, self.reg_gp[i]));
         }
 
+        try!(write!(f, "VF reg: {:#x} | ", self.reg_gp[15]));
         try!(write!(f, "I-register: {:#4x} | ", self.reg_i));
         try!(writeln!(f,
                       "Timers: Sound({:#4x}) Delay({:#4x})",
@@ -39,7 +38,7 @@ impl fmt::Debug for Registers {
         for i in 0..16 {
             writeln!(f, "SLVL {}: {:#4x}", i, self.stack[i]);
         }
-        write!(f, "VF_bit = {:?}", self.vf_bit)
+        writeln!(f, "")
     }
 }
 
@@ -88,6 +87,14 @@ impl Registers {
 
     pub fn increment_pc(&mut self) {
         self.reg_pc += 2;
+    }
+
+    pub fn set_vf(&mut self) {
+        self.reg_gp[15] = 1;
+    }
+
+    pub fn clear_vf(&mut self) {
+        self.reg_gp[15] = 0;
     }
 
     pub fn jump_to_address(&mut self, addr: u16, jump_type: JumpType) {

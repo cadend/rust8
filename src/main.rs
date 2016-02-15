@@ -13,6 +13,7 @@ fn main() {
     println!("ROM path: {}", program_path);
 
     let rom_file = File::open(program_path).unwrap();
+    println!("Opened file");
     let mut chip8_emu = Chip8::new();
 
     chip8_emu.store_program_data(rom_file);
