@@ -8,7 +8,8 @@ notifications:
     - caden@cadendepatie.com
 before_install:
   - sudo apt-get -qq update
-  - sudo apt-get install -y libsdl2-dev
+install:
+  - sudo apt-get install libsdl2-dev
 before_script:
   - rustc --version
   - cargo --version
