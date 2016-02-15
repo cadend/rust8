@@ -1,0 +1,17 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+notifications:
+  email:
+    - caden@cadendepatie.com
+before_script:
+  - rustc --version
+  - cargo --version
+branches:
+  only:
+    - master
+matrix:
+  allow_failures:
+    - rust: nightly
